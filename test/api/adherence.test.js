@@ -29,6 +29,27 @@ async function loggedDose(scheduleId, status, date, time = '08:00') {
   });
 }
 
+// Many answered doses at 08:00 on days in a row from 1 March 2026, the logs in one createMany
+async function loggedDoses(scheduleId, statuses) {
+  // Each log needs its own reminder, so those are made first
+  const reminders = await prisma.reminder.createManyAndReturn({
+    data: statuses.map((_, index) => ({
+      scheduleId,
+      reminderTime: new Date(Date.UTC(2026, 2, 1 + index, 8)),
+      status: 'RESOLVED',
+    })),
+  });
+  return prisma.doseLog.createMany({
+    data: reminders.map((reminder, index) => ({
+      scheduleId,
+      reminderId: reminder.id,
+      status: statuses[index],
+      date: new Date(reminder.reminderTime.toISOString().slice(0, 10)),
+      time: '08:00',
+    })),
+  });
+}
+
 // What the history should hold for one log
 function shown(log, medicine, date) {
   return {
@@ -59,22 +80,61 @@ test('the rate counts skipped doses: 3 taken, 1 missed and 1 skipped give 60', a
   expect(await getTotals(user.id)).toEqual({ taken: 3, missed: 1, skipped: 1, rate: 60 });
 });
 
-test('the rate is rounded to a whole percent', async () => {
+test('the rate is rounded down to a whole percent', async () => {
   const first = await createPatient();
   const firstSchedule = await scheduleFor(first.user.id, MORNING);
-  // 2 of 3 is 66.7%, shown as 67
+  // 2 of 3 is 66.7%, rounded down to 66
   for (const [index, status] of ['TAKEN', 'TAKEN', 'SKIPPED'].entries()) {
     await loggedDose(firstSchedule.id, status, `2026-03-1${index}`);
   }
   const second = await createPatient();
   const secondSchedule = await scheduleFor(second.user.id, MORNING);
-  // 1 of 3 is 33.3%, shown as 33
+  // 1 of 3 is 33.3%, rounded down to 33
   for (const [index, status] of ['TAKEN', 'MISSED', 'MISSED'].entries()) {
     await loggedDose(secondSchedule.id, status, `2026-03-1${index}`);
   }
 
-  expect(await getTotals(first.user.id)).toEqual({ taken: 2, missed: 0, skipped: 1, rate: 67 });
+  expect(await getTotals(first.user.id)).toEqual({ taken: 2, missed: 0, skipped: 1, rate: 66 });
   expect(await getTotals(second.user.id)).toEqual({ taken: 1, missed: 2, skipped: 0, rate: 33 });
+});
+
+test('the rate is 100 only when every logged dose was taken: 200 of 201 give 99', async () => {
+  const oneMissed = await createPatient();
+  const oneMissedSchedule = await scheduleFor(oneMissed.user.id, MORNING);
+  // 200 of 201 is 99.5%, which rounding to the nearest would show as 100
+  await loggedDoses(oneMissedSchedule.id, ['MISSED', ...Array(200).fill('TAKEN')]);
+  const allTaken = await createPatient();
+  const allTakenSchedule = await scheduleFor(allTaken.user.id, MORNING);
+  await loggedDoses(allTakenSchedule.id, Array(201).fill('TAKEN'));
+
+  expect(await getTotals(oneMissed.user.id)).toEqual({
+    taken: 200,
+    missed: 1,
+    skipped: 0,
+    rate: 99,
+  });
+  expect(await getTotals(allTaken.user.id)).toEqual({
+    taken: 201,
+    missed: 0,
+    skipped: 0,
+    rate: 100,
+  });
+});
+
+test('the rate is worked out in whole numbers: 29 taken of 100 give 29', async () => {
+  const { user } = await createPatient();
+  const schedule = await scheduleFor(user.id, MORNING);
+  // (29 / 100) * 100 is 28.999... in JavaScript, which would round down to 28
+  await loggedDoses(schedule.id, [...Array(29).fill('TAKEN'), ...Array(71).fill('SKIPPED')]);
+
+  expect(await getTotals(user.id)).toEqual({ taken: 29, missed: 0, skipped: 71, rate: 29 });
+});
+
+test('the rate stays null while a patient with dose times has no logs', async () => {
+  const { user } = await createPatient();
+  await scheduleFor(user.id, MORNING);
+
+  expect(await getTotals(user.id)).toEqual(NO_TOTALS);
 });
 
 test('the history is newest first by date, then time, then id', async () => {

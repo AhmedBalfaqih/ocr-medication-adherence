@@ -15,7 +15,9 @@ export async function getTotals(userId) {
   ]);
   const logged = taken + missed + skipped;
   // No rate before the first dose is logged, so a new patient never sees 0%
-  const rate = logged === 0 ? null : Math.round((taken / logged) * 100);
+  if (logged === 0) return { taken, missed, skipped, rate: null };
+  // Rounded down, so 100% means all were taken; times 100 first so 29 of 100 gives 29
+  const rate = Math.floor((taken * 100) / logged);
   return { taken, missed, skipped, rate };
 }
 

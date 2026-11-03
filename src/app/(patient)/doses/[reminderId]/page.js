@@ -112,12 +112,12 @@ export default function DosePage() {
               <dd className="text-3xl font-bold">{totals.taken}</dd>
             </div>
             <div>
-              <dt>Skipped</dt>
-              <dd className="text-3xl font-bold">{totals.skipped}</dd>
-            </div>
-            <div>
               <dt>Missed</dt>
               <dd className="text-3xl font-bold">{totals.missed}</dd>
+            </div>
+            <div>
+              <dt>Skipped</dt>
+              <dd className="text-3xl font-bold">{totals.skipped}</dd>
             </div>
           </dl>
           {totals.rate !== null && <p>You have taken {totals.rate}% of your doses so far.</p>}
