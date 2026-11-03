@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { sendPush } from '@/lib/push';
-import { localDateTime, nextOccurrenceAfter, occurrencesBetween, todayIn } from '@/lib/time';
+import { localDateTime, nextOccurrenceAfter, occurrencesBetween } from '@/lib/time';
 import { recordEvent } from '@/services/events';
 
 // Doses from missed ticks are caught up for one day back
@@ -83,6 +83,11 @@ export function isMissed(schedule, timeZone, reminderTime, now) {
   return next === null || next.getTime() <= now.getTime();
 }
 
+// FR10 Doses count only after the last save, so a time already past today starts tomorrow
+export function windowStart(schedule, now) {
+  return new Date(Math.max(now.getTime() - LOOKBACK_MS, schedule.updatedAt.getTime()));
+}
+
 // Only the error kind goes in the message, never patient data (DR5)
 function tickFailed(step, error) {
   const kind = error.code ? `${error.name} ${error.code}` : error.name;
@@ -96,19 +101,12 @@ function utcDate(instant, days) {
   return date;
 }
 
-// A changed dose time counts from the day it was saved, so it never adds a dose to an earlier day
-function countedFromDaySaved(schedule, timeZone) {
-  const daySaved = new Date(todayIn(timeZone, schedule.updatedAt));
-  if (daySaved.getTime() <= schedule.startDate.getTime()) return schedule;
-  return { ...schedule, startDate: daySaved };
-}
-
 // Not snoozed, or the snooze is over
 function snoozeOver(now) {
   return [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }];
 }
 
-// Step 1: every dose due in the last 24 hours gets one reminder row
+// Step 1: every dose due since the last save, at most 24 hours back, gets one reminder row
 async function generateReminders(now, deadline) {
   const from = new Date(now.getTime() - LOOKBACK_MS);
   let generated = 0;
@@ -129,8 +127,8 @@ async function generateReminders(now, deadline) {
     const rows = [];
     for (const schedule of schedules) {
       const timeZone = schedule.medicine.user.timezone;
-      const rule = countedFromDaySaved(schedule, timeZone);
-      for (const reminderTime of occurrencesBetween(rule, timeZone, from, now)) {
+      const start = windowStart(schedule, now);
+      for (const reminderTime of occurrencesBetween(schedule, timeZone, start, now)) {
         rows.push({ scheduleId: schedule.id, reminderTime });
       }
     }

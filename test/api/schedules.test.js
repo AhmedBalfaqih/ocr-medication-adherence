@@ -267,7 +267,7 @@ test('a patient reads, edits and deletes their own schedule', async () => {
   const edited = await updateSchedule(schedule.id, EDITED, cookie);
   const afterEdit = new Date();
   expect(edited.status).toBe(200);
-  // The tick counts the changed time only from the day of this save
+  // The tick counts the changed time only from the moment of this save
   const { updatedAt } = await storedSchedule(schedule.id);
   expect(updatedAt.getTime()).toBeGreaterThanOrEqual(beforeEdit.getTime());
   expect(updatedAt.getTime()).toBeLessThanOrEqual(afterEdit.getTime());

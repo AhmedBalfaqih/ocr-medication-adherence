@@ -331,6 +331,142 @@ test('a dose time moved later gets no reminder for the day before the change', a
   ]);
 });
 
+test('FR10 a dose time already past today when it is added starts tomorrow', async () => {
+  const { medicine } = await patientWithDevice();
+  // 08:00 from 15 January, added at 14:00 in Cairo that day, which is 12:00 UTC
+  const schedule = await createSchedule(medicine.id, {
+    time: '08:00',
+    startDate: new Date('2024-01-15'),
+    endDate: new Date('2024-01-16'),
+    updatedAt: new Date('2024-01-15T12:00:00Z'),
+  });
+
+  // The next tick at 14:01 and a late one at 23:59 make nothing for the 08:00 that had passed
+  await runTick(new Date('2024-01-15T12:01:00Z'));
+  await runTick(new Date('2024-01-15T21:59:00Z'));
+  expect(await remindersOf(schedule.id)).toEqual([]);
+
+  // 08:00 the next day
+  const nextMorning = new Date('2024-01-16T06:00:00Z');
+  await runTick(nextMorning);
+  const [dose, ...rest] = await remindersOf(schedule.id);
+  expect(rest).toEqual([]);
+  expect(dose).toMatchObject({ reminderTime: nextMorning, status: 'SENT', sentAt: nextMorning });
+  expect(pushesFor(dose.id)).toHaveLength(1);
+});
+
+test('FR10 a dose time still to come today when it is added is due today', async () => {
+  const { medicine } = await patientWithDevice();
+  // 16:00 on 18 January, added at 14:00 in Cairo that day, which is 12:00 UTC
+  const schedule = await createSchedule(medicine.id, {
+    time: '16:00',
+    startDate: new Date('2024-01-18'),
+    endDate: new Date('2024-01-18'),
+    updatedAt: new Date('2024-01-18T12:00:00Z'),
+  });
+
+  await runTick(new Date('2024-01-18T12:01:00Z'));
+  expect(await remindersOf(schedule.id)).toEqual([]);
+
+  // 16:00 that day
+  const doseTime = new Date('2024-01-18T14:00:00Z');
+  await runTick(doseTime);
+  const [dose, ...rest] = await remindersOf(schedule.id);
+  expect(rest).toEqual([]);
+  expect(dose).toMatchObject({ reminderTime: doseTime, status: 'SENT', sentAt: doseTime });
+  expect(pushesFor(dose.id)).toHaveLength(1);
+});
+
+test('FR10 a dose time changed to a time already past today starts tomorrow', async () => {
+  const { medicine } = await patientWithDevice();
+  const schedule = await dailyAt(medicine.id, '20:00', '2024-01-24', '2024-01-25');
+
+  // At 14:00 in Cairo on 24 January, 12:00 UTC, the patient changes 20:00 to 09:00
+  await prisma.schedule.update({
+    where: { id: schedule.id },
+    data: { time: '09:00', updatedAt: new Date('2024-01-24T12:00:00Z') },
+  });
+
+  // Ticks at 14:01 and 20:00 that day make no 09:00 dose and no dose at the old time
+  await runTick(new Date('2024-01-24T12:01:00Z'));
+  await runTick(new Date('2024-01-24T18:00:00Z'));
+  expect(await remindersOf(schedule.id)).toEqual([]);
+
+  // 09:00 the next day
+  const nextMorning = new Date('2024-01-25T07:00:00Z');
+  await runTick(nextMorning);
+  const [dose, ...rest] = await remindersOf(schedule.id);
+  expect(rest).toEqual([]);
+  expect(dose).toMatchObject({ reminderTime: nextMorning, status: 'SENT', sentAt: nextMorning });
+  expect(pushesFor(dose.id)).toHaveLength(1);
+});
+
+test('UC6 an open dose is missed once the changed time has passed that day, and the new time starts tomorrow', async () => {
+  const { medicine } = await patientWithDevice();
+  const schedule = await dailyAt(medicine.id, '08:00', '2024-01-24', '2024-01-25');
+  const morningTime = new Date('2024-01-24T06:00:00Z');
+
+  // 08:00 in Cairo on 24 January, so that dose is sent and left unanswered
+  await runTick(morningTime);
+  const [morningDose] = await remindersOf(schedule.id);
+  expect(morningDose).toMatchObject({ reminderTime: morningTime, status: 'SENT' });
+
+  // At 14:00 in Cairo, 12:00 UTC, the patient changes 08:00 to 09:00
+  await prisma.schedule.update({
+    where: { id: schedule.id },
+    data: { time: '09:00', updatedAt: new Date('2024-01-24T12:00:00Z') },
+  });
+
+  // The 14:01 tick makes no 09:00 dose for 24 January
+  await runTick(new Date('2024-01-24T12:01:00Z'));
+  const afterChange = await remindersOf(schedule.id);
+  expect(afterChange.map((row) => row.reminderTime)).toEqual([morningTime]);
+
+  // Yet 09:00 that day is the next dose after 08:00, so the open dose is missed
+  expect(await logsOf(morningDose.id)).toEqual([
+    { scheduleId: schedule.id, status: 'MISSED', date: new Date('2024-01-24'), time: '08:00' },
+  ]);
+  expect(await storedReminder(morningDose.id)).toMatchObject({ status: 'RESOLVED' });
+
+  // 09:00 the next day gets the first reminder at the new time; a second tick adds nothing
+  const nextMorning = new Date('2024-01-25T07:00:00Z');
+  await runTick(nextMorning);
+  await runTick(nextMorning);
+  const reminders = await remindersOf(schedule.id);
+  expect(reminders.map((row) => row.reminderTime)).toEqual([morningTime, nextMorning]);
+  const [, dose] = reminders;
+  expect(dose).toMatchObject({ status: 'SENT', sentAt: nextMorning });
+  expect(pushesFor(dose.id)).toHaveLength(1);
+  expect(await logsOf(dose.id)).toEqual([]);
+});
+
+test('FR10 after skipped ticks the next tick creates every dose since the save, each once', async () => {
+  const { medicine } = await patientWithDevice();
+  // Both added at 14:00 in Cairo on 28 March, 12:00 UTC, for that day only
+  const added = {
+    startDate: new Date('2024-03-28'),
+    endDate: new Date('2024-03-28'),
+    updatedAt: new Date('2024-03-28T12:00:00Z'),
+  };
+  const first = await createSchedule(medicine.id, { time: '14:05', ...added });
+  const second = await createSchedule(medicine.id, { time: '14:15', ...added });
+
+  // No tick ran until 14:20, and one more a minute later adds nothing
+  const now = new Date('2024-03-28T12:20:00Z');
+  await runTick(now);
+  await runTick(new Date('2024-03-28T12:21:00Z'));
+  const doses = [
+    [first, new Date('2024-03-28T12:05:00Z')],
+    [second, new Date('2024-03-28T12:15:00Z')],
+  ];
+  for (const [schedule, doseTime] of doses) {
+    const reminders = await remindersOf(schedule.id);
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0]).toMatchObject({ reminderTime: doseTime, status: 'SENT', sentAt: now });
+    expect(pushesFor(reminders[0].id)).toHaveLength(1);
+  }
+});
+
 test('a snoozed reminder is not sent before the snooze ends and is sent after it', async () => {
   const { medicine } = await patientWithDevice();
   const schedule = await dailyAt(medicine.id, '08:00', '2024-03-18');

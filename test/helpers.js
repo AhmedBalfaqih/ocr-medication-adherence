@@ -56,7 +56,7 @@ export async function createMedicine(userId, fields = {}) {
 export async function createSchedule(medicineId, fields = {}) {
   const today = new Date(new Date().toISOString().slice(0, 10));
   const data = { medicineId, time: '08:00', frequency: 'DAILY', startDate: today, ...fields };
-  // Saved on its start date, so the tick counts every dose from that day
+  // Saved at UTC midnight of its start date, so the tick counts every dose after that moment
   return prisma.schedule.create({ data: { updatedAt: data.startDate, ...data } });
 }
 

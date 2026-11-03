@@ -83,7 +83,7 @@ model Schedule {
   daysOfWeek Int[]      @default([]) // 0 (Sunday) to 6; used when frequency = SPECIFIC_DAYS
   startDate  DateTime   @db.Date
   endDate    DateTime?  @db.Date
-  updatedAt  DateTime   @default(now()) @updatedAt // the tick counts doses from the day of the last save
+  updatedAt  DateTime   @default(now()) @updatedAt // the tick counts doses from the moment of the last save
   reminders  Reminder[]
   doseLogs   DoseLog[]
 
