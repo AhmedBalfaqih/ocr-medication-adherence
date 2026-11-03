@@ -1,0 +1,148 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  PATIENT
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum Frequency {
+  DAILY
+  SPECIFIC_DAYS
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  RESOLVED
+}
+
+enum DoseStatus {
+  TAKEN
+  MISSED
+  SKIPPED
+}
+
+enum MedicineSource {
+  MANUAL
+  OCR
+}
+
+model User {
+  id                Int                @id @default(autoincrement())
+  name              String
+  email             String             @unique
+  passwordHash      String
+  role              Role               @default(PATIENT)
+  status            AccountStatus      @default(ACTIVE)
+  timezone          String             @default("Africa/Cairo")
+  dateOfBirth       DateTime?          @db.Date
+  conditions        String?
+  createdAt         DateTime           @default(now())
+  medicines         Medicine[]
+  ocrScans          OCRScan[]
+  pushSubscriptions PushSubscription[]
+  events            SystemEvent[]
+}
+
+model Medicine {
+  id        Int            @id @default(autoincrement())
+  userId    Int
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  dosage    String
+  notes     String?
+  source    MedicineSource @default(MANUAL)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  schedules Schedule[]
+  ocrScans  OCRScan[]
+
+  @@index([userId])
+}
+
+model Schedule {
+  id         Int        @id @default(autoincrement())
+  medicineId Int
+  medicine   Medicine   @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  time       String     // "HH:mm" wall clock in the user's timezone
+  frequency  Frequency  @default(DAILY)
+  daysOfWeek Int[]      @default([]) // 0 (Sunday) to 6; used when frequency = SPECIFIC_DAYS
+  startDate  DateTime   @db.Date
+  endDate    DateTime?  @db.Date
+  updatedAt  DateTime   @default(now()) @updatedAt // the tick counts doses from the day of the last save
+  reminders  Reminder[]
+  doseLogs   DoseLog[]
+
+  @@index([medicineId])
+}
+
+model Reminder {
+  id           Int            @id @default(autoincrement())
+  scheduleId   Int
+  schedule     Schedule       @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  reminderTime DateTime       // UTC instant of this occurrence
+  status       ReminderStatus @default(PENDING)
+  sentAt       DateTime?
+  snoozedUntil DateTime?
+  doseLog      DoseLog?
+
+  @@unique([scheduleId, reminderTime])
+  @@index([status, reminderTime])
+}
+
+model DoseLog {
+  id         Int        @id @default(autoincrement())
+  scheduleId Int
+  schedule   Schedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  reminderId Int        @unique
+  reminder   Reminder   @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+  status     DoseStatus
+  date       DateTime   @db.Date // local date of the occurrence
+  time       String     // local "HH:mm" of the occurrence
+  loggedAt   DateTime   @default(now())
+}
+
+model OCRScan {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  medicineId    Int?
+  medicine      Medicine? @relation(fields: [medicineId], references: [id], onDelete: SetNull)
+  imagePath     String?   // always null: images never leave the device
+  extractedText String
+  confirmedText String?
+  createdAt     DateTime  @default(now())
+}
+
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}
+
+model SystemEvent {
+  id        Int      @id @default(autoincrement())
+  type      String   // e.g. TICK_FAILED, PUSH_FAILED, LOGIN_FAILED, ACCOUNT_SUSPENDED
+  message   String
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+}
