@@ -15,3 +15,8 @@ export async function api(path, { method = 'GET', body } = {}) {
   }
   return data;
 }
+
+// FR13 Only a 401 means the session is missing or over; any other failure is a fault to retry
+export function isLoggedOut(error) {
+  return error?.status === 401;
+}
