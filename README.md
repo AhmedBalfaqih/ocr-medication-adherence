@@ -2,6 +2,8 @@
 
 A web app that helps patients take their medicines on time. The patient adds each medicine by typing it in or by scanning its label with the camera, and the label is read in the browser. Nothing is saved until the patient checks the details and confirms them. The app reminds the patient when a dose is due and shows which doses were taken, missed or skipped. It does not diagnose or give medical advice.
 
+The app is live at https://ocr-medication-adherence.vercel.app.
+
 ## Stack
 
 - Next.js 16 (App Router) with React 19, in JavaScript
