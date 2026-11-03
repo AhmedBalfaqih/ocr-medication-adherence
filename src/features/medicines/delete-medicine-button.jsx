@@ -53,7 +53,7 @@ export function DeleteMedicineButton({ medicineId }) {
       >
         Delete medicine
       </AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent className="w-[calc(100%-2rem)]">
         <AlertDialogHeader>
           <AlertDialogTitle>Delete this medicine?</AlertDialogTitle>
           <AlertDialogDescription>

@@ -53,7 +53,7 @@ export function DeleteScheduleButton({ scheduleId, medicineId }) {
       >
         Delete this time
       </AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent className="w-[calc(100%-2rem)]">
         <AlertDialogHeader>
           <AlertDialogTitle>Delete this dose time?</AlertDialogTitle>
           <AlertDialogDescription>

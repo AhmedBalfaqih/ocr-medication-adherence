@@ -82,7 +82,7 @@ export function AccountActions({ account, onChanged, onRemoved }) {
             <HugeiconsIcon icon={UserRemove01Icon} aria-hidden="true" data-icon="inline-start" />
             Remove
           </AlertDialogTrigger>
-          <AlertDialogContent>
+          <AlertDialogContent className="w-[calc(100%-2rem)]">
             <AlertDialogHeader>
               <AlertDialogTitle>Remove this account?</AlertDialogTitle>
               <AlertDialogDescription>
