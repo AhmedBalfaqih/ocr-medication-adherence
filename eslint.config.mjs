@@ -12,6 +12,19 @@ const eslintConfig = defineConfig([
     'src/generated/**',
     'public/tesseract/**',
   ]),
+  {
+    rules: {
+      // Vercel's Node 26 has no global Temporal, so date code imports it (design change 54)
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'Temporal',
+          message:
+            "Use import { Temporal } from 'temporal-polyfill/implementation'; there is no global Temporal on Vercel.",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

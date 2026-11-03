@@ -1,4 +1,6 @@
-// FR9 FR10 Dose times in the patient's zone, with Temporal built into Node 26 (server only)
+// FR9 FR10 Dose times in the patient's zone, with Temporal from temporal-polyfill (server only)
+// Never the global: Vercel's Node 26 has none, and tests must run the same code (design change 54)
+import { Temporal } from 'temporal-polyfill/implementation';
 
 // The search starts a day early, and a weekly dose that just passed is due again 7 days on
 const SEARCH_DAYS = 9;
